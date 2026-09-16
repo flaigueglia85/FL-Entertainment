@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 set VERSION=%~1
-if "%VERSION%"=="" set VERSION=1.0.0
+if "%VERSION%"=="" set VERSION=2.0.0
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\publish-from-master.ps1" -Version "%VERSION%"
 set ERR=%ERRORLEVEL%
