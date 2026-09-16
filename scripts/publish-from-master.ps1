@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "1.0.0"
+  [string]$Version = "2.0.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,15 +15,11 @@ Write-Host "Versione: $Version"
 Write-Host "Kodi master: $env:APPDATA\Kodi"
 Write-Host ""
 
-if (!(Get-Command git -ErrorAction SilentlyContinue)) {
-  throw "git non trovato nel PATH."
-}
+if (!(Get-Command git -ErrorAction SilentlyContinue)) { throw "git non trovato nel PATH." }
 
 if (!(Get-Command gh -ErrorAction SilentlyContinue)) {
   Write-Host "GitHub CLI non trovato. Provo installazione con winget..." -ForegroundColor Yellow
-  if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
-    throw "gh non installato e winget non disponibile. Installa GitHub CLI manualmente."
-  }
+  if (!(Get-Command winget -ErrorAction SilentlyContinue)) { throw "gh non installato e winget non disponibile." }
   winget install --id GitHub.cli -e --source winget --accept-package-agreements --accept-source-agreements
   $env:Path += ";$env:ProgramFiles\GitHub CLI"
 }
@@ -34,15 +30,12 @@ try {
   if ($LASTEXITCODE -eq 0) { $authOk = $true }
 } catch {}
 if (!$authOk) {
-  Write-Host ""
-  Write-Host "Devi autenticare GitHub CLI una sola volta." -ForegroundColor Yellow
-  Write-Host "Si apre ora il login gh auth login..."
   gh auth login --hostname github.com --git-protocol https --web
   if ($LASTEXITCODE -ne 0) { throw "Autenticazione GitHub CLI fallita." }
 }
 
 Write-Host ""
-Write-Host "[1/3] Build payload dal Kodi Windows master..."
+Write-Host "[1/3] Build payload custom-only dal Kodi Windows master..."
 & powershell -NoProfile -ExecutionPolicy Bypass -File $buildScript -Version $Version
 if ($LASTEXITCODE -ne 0) { throw "Build payload fallita." }
 
@@ -58,4 +51,4 @@ gh release view $tag --repo $repo --json tagName,assets,url | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Verifica release fallita." }
 
 Write-Host ""
-Write-Host "Payload pubblicato. Il bootstrap puo' ora installare/aggiornare FL-Entertainment."
+Write-Host "Config FL-Entertainment pubblicata. Addon ufficiali verranno installati dal bootstrap/Kodi."
