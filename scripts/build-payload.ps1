@@ -46,8 +46,7 @@ if (!(Test-Path (Join-Path $bridge "addon.xml"))) {
 }
 Copy-Item $bridge (Join-Path $stage "addons\plugin.video.s4me.bridge") -Recurse -Force
 
-# 2) Arctic Fuse 3: i menu/widget personalizzati NON sono necessariamente in userdata/addon_data.
-# AF3 + SkinVariables generano file runtime direttamente nella cartella 1080i della skin.
+# 2) Arctic Fuse 3: menu/widget generati runtime nella 1080i della skin.
 $skinRoot = Join-Path $addonsRoot "skin.arctic.fuse.3"
 $skin1080 = Join-Path $skinRoot "1080i"
 $skinStage1080 = Join-Path $stage "addons\skin.arctic.fuse.3\1080i"
@@ -73,13 +72,13 @@ if (Test-Path $skinData) {
   Copy-Item $skinData (Join-Path $stage "userdata\addon_data\skin.arctic.fuse.3") -Recurse -Force
 }
 
-# 3) SkinVariables: qui possono esserci altri dati di configurazione/generazione.
+# 3) SkinVariables.
 $svData = Join-Path $addonDataRoot "script.skinvariables"
 if (Test-Path $svData) {
   Copy-Item $svData (Join-Path $stage "userdata\addon_data\script.skinvariables") -Recurse -Force
 }
 
-# 4) TMDb Helper: solo preferenze sicure + custom players. Niente token/account/cache DB.
+# 4) TMDb Helper: solo preferenze sicure + custom players.
 $tmdbSrc = Join-Path $addonDataRoot "plugin.video.themoviedb.helper"
 $tmdbDst = Join-Path $stage "userdata\addon_data\plugin.video.themoviedb.helper"
 if (Test-Path $tmdbSrc) {
@@ -89,32 +88,29 @@ if (Test-Path $tmdbSrc) {
   if (Test-Path $players) { Copy-Item $players $tmdbDst -Recurse -Force }
 }
 
-# Stream4Me NON viene copiato dal master: il bootstrap installa la stable ufficiale.
-# Unica impostazione forzata: channel_language=ita.
-
 Get-ChildItem $stage -Recurse -Force -ErrorAction SilentlyContinue |
   Where-Object { $_.Name -in @('.git','.gitignore','__pycache__') } |
   Sort-Object FullName -Descending |
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-# Validazione: bridge obbligatorio; per AF3 accettiamo generated XML e/o SkinVariables data.
 $hasBridge = Test-Path (Join-Path $stage "addons\plugin.video.s4me.bridge\addon.xml")
 $hasSkinGenerated = $generatedCount -gt 0
 $hasSkinVariablesData = Test-Path (Join-Path $stage "userdata\addon_data\script.skinvariables")
-if (!$hasBridge) { throw "Payload non valido: bridge assente." }
+if (!$hasBridge) { throw "Payload non valido: bridge assente nello staging." }
 if (!$hasSkinGenerated -and !$hasSkinVariablesData) {
   throw "Payload non valido: non trovo configurazione AF3 ne' nei generated XML della skin ne' in script.skinvariables."
 }
 
-# ZIP portabile: entry create manualmente con slash (/), non Compress-Archive.
+# ZIP portabile: entry create manualmente e convertite da path Windows a slash POSIX.
 if (Test-Path $outZip) { Remove-Item $outZip -Force }
 $fs = [System.IO.File]::Open($outZip, [System.IO.FileMode]::CreateNew)
 $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create, $false)
 try {
   $files = Get-ChildItem -LiteralPath $stage -Recurse -File
   foreach ($file in $files) {
-    $relative = $file.FullName.Substring($stage.Length).TrimStart('\','/')
-    $entryName = ($relative -replace '\\','/')
+    $relative = $file.FullName.Substring($stage.Length).TrimStart([char]92,[char]47)
+    # IMPORTANT: Replace char 92 (\) con char 47 (/). Niente regex ambiguo.
+    $entryName = $relative.Replace([char]92, [char]47)
     $entry = $zip.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
     $entryStream = $entry.Open()
     $input = [System.IO.File]::OpenRead($file.FullName)
@@ -134,9 +130,14 @@ finally {
 $verify = [System.IO.Compression.ZipFile]::OpenRead($outZip)
 try {
   $names = @($verify.Entries | ForEach-Object { $_.FullName })
-  $withBackslash = @($names | Where-Object { $_ -match '\\' })
-  if ($withBackslash.Count -gt 0) { throw "ZIP non portabile: contiene backslash." }
-  if ($names -notcontains "addons/plugin.video.s4me.bridge/addon.xml") { throw "ZIP non valida: bridge non presente." }
+  $withBackslash = @($names | Where-Object { $_.Contains([string][char]92) })
+  if ($withBackslash.Count -gt 0) {
+    throw "ZIP non portabile: contiene backslash: $($withBackslash -join ', ')"
+  }
+  if ($names -notcontains "addons/plugin.video.s4me.bridge/addon.xml") {
+    $preview = (($names | Select-Object -First 20) -join ', ')
+    throw "ZIP non valida: bridge non presente. Entries: $preview"
+  }
 }
 finally {
   $verify.Dispose()
