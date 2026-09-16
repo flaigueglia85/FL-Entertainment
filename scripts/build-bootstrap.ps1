@@ -20,8 +20,8 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stageAddon | Out-Null
 
-# Copia il CONTENUTO del source dentro una sola cartella addon di primo livello.
-# Kodi richiede esattamente: plugin.program.flentertainment.bootstrap/addon.xml
+# Copia il contenuto del source dentro una sola cartella addon di primo livello.
+# Kodi richiede: plugin.program.flentertainment.bootstrap/addon.xml
 Copy-Item (Join-Path $src "*") $stageAddon -Recurse -Force
 
 if (Test-Path $outZip) { Remove-Item $outZip -Force }
@@ -33,7 +33,8 @@ try {
   $names = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\\','/') })
   $required = "$addonId/addon.xml"
   if ($names -notcontains $required) {
-    throw "ZIP non valida: manca $required. Prime entries: $($names | Select-Object -First 10 -join ', ')"
+    $preview = (($names | Select-Object -First 10) -join ', ')
+    throw "ZIP non valida: manca $required. Prime entries: $preview"
   }
   $foreignTop = @($names | Where-Object { $_ -and -not $_.StartsWith("$addonId/") })
   if ($foreignTop.Count -gt 0) {
