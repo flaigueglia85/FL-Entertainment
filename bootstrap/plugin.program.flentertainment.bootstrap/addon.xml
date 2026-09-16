@@ -1,17 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.program.flentertainment.bootstrap"
-       name="FL-Entertainment Bootstrap"
-       version="1.0.3"
-       provider-name="FL-Entertainment">
-  <requires>
-    <import addon="xbmc.python" version="3.0.0"/>
-  </requires>
-  <extension point="xbmc.python.pluginsource" library="default.py">
-    <provides>executable</provides>
-  </extension>
+<addon id="plugin.program.flentertainment.bootstrap" name="FL-Entertainment Bootstrap" version="1.0.4" provider-name="FL-Entertainment">
+  <requires><import addon="xbmc.python" version="3.0.0"/></requires>
+  <extension point="xbmc.python.pluginsource" library="default.py"><provides>executable</provides></extension>
   <extension point="xbmc.addon.metadata">
     <summary lang="en_GB">Bootstrap and updater for FL-Entertainment Kodi configuration</summary>
-    <description lang="en_GB">Installs and updates FL-Entertainment from the public GitHub manifest using Kodi's own file permissions.</description>
+    <description lang="en_GB">FL-Entertainment bootstrap.</description>
     <platform>all</platform>
     <license>MIT</license>
   </extension>
