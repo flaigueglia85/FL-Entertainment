@@ -10,35 +10,70 @@ Distribuzione Kodi centralizzata per Android / Fire TV.
 - **GitHub Release**: ospita il payload ZIP completo.
 - **Kodi client**: scarica e applica il payload usando i propri permessi, senza scrivere in `Android/data` via ADB.
 
-## Prima installazione
+## Prima installazione client
 
-1. Build bootstrap:
+Build bootstrap:
 
 ```powershell
 .\scripts\build-bootstrap.ps1
 ```
 
-2. Copia sul device:
+Copia sul device:
 
 ```bat
 adb push "dist\plugin.program.flentertainment.bootstrap-1.0.2.zip" "/sdcard/Download/"
 ```
 
-3. In Kodi:
+Poi in Kodi:
 
 ```text
 Add-on -> Installa da file ZIP -> Download -> plugin.program.flentertainment.bootstrap-1.0.2.zip
 ```
 
-4. Apri **FL-Entertainment Bootstrap** e scegli **Installa / reinstalla FL-Entertainment**.
+Apri **FL-Entertainment Bootstrap** e scegli **Installa / reinstalla FL-Entertainment**.
 
-Il manifest è già configurato su:
+Il bootstrap usa già:
 
 ```text
 https://raw.githubusercontent.com/flaigueglia85/FL-Entertainment/main/manifest.json
 ```
 
-## Creare un payload dal master Windows
+## Pubblicazione dal master Windows — one click
+
+Clona la repo una volta:
+
+```bat
+cd C:\work
+git clone https://github.com/flaigueglia85/FL-Entertainment.git
+cd FL-Entertainment
+```
+
+Poi per pubblicare il master Kodi corrente:
+
+```bat
+PUBLISH_FROM_MASTER.bat 1.0.0
+```
+
+Lo script:
+
+1. legge `%APPDATA%\Kodi`;
+2. risolve gli addon portabili richiesti;
+3. crea `dist\FL-Entertainment-payload-<version>.zip`;
+4. esclude componenti binari Windows, cache e DB locali;
+5. non pubblica cookies/sessioni e azzera credenziali/token/API key nei settings distribuiti;
+6. installa GitHub CLI tramite `winget` se manca;
+7. richiede il login GitHub CLI solo la prima volta;
+8. crea/aggiorna la GitHub Release;
+9. carica il payload come release asset;
+10. aggiorna e pubblica `manifest.json`.
+
+Per una nuova configurazione:
+
+```bat
+PUBLISH_FROM_MASTER.bat 1.0.1
+```
+
+## Build manuale del payload
 
 ```powershell
 .\scripts\build-payload.ps1 -Version 1.0.0
@@ -50,26 +85,6 @@ Output:
 dist\FL-Entertainment-payload-1.0.0.zip
 ```
 
-Il builder include Arctic Fuse 3, Skin Variables, TMDb Helper, Stream4Me, bridge e dipendenze portabili, evitando componenti binari platform-specific, cache e database Kodi locali.
-
-## Pubblicare una nuova versione
-
-Prerequisiti:
-
-```text
-GitHub CLI (gh)
-gh auth login
-```
-
-Poi:
-
-```powershell
-.\scripts\build-payload.ps1 -Version 1.0.1
-.\scripts\publish-release.ps1 -Version 1.0.1
-```
-
-Lo script crea/aggiorna la GitHub Release e aggiorna `manifest.json`.
-
 ## Aggiornamenti client
 
 Nel bootstrap Kodi:
@@ -78,10 +93,11 @@ Nel bootstrap Kodi:
 Controlla aggiornamenti
 ```
 
-Se il manifest contiene una versione nuova, il client scarica il payload e lo applica.
+Se `manifest.json` contiene una versione nuova, il client scarica il payload della relativa GitHub Release e lo applica con i permessi di Kodi.
 
-## Note
+## Dati locali e account
 
-- Trakt può restare autenticato per-device.
+- Trakt resta autenticato per-device.
+- Cookies, sessioni, token e API key del master non vengono distribuiti nel payload pubblico.
 - ADB serve solo per portare il bootstrap iniziale in `Download`.
-- Gli aggiornamenti successivi arrivano dal manifest pubblico.
+- Gli aggiornamenti successivi arrivano da GitHub tramite il bootstrap.
