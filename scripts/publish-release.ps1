@@ -6,13 +6,16 @@ $ErrorActionPreference = "Stop"
 $repo = "flaigueglia85/FL-Entertainment"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $payload = Join-Path $root "dist\FL-Entertainment-payload-$Version.zip"
+$bootstrap = Join-Path $root "dist\plugin.program.flentertainment.bootstrap-$Version.zip"
 
 if (!(Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh) non trovato." }
 if (!(Get-Command git -ErrorAction SilentlyContinue)) { throw "git non trovato." }
 if (!(Test-Path $payload)) { throw "Payload non trovato: $payload" }
+if (!(Test-Path $bootstrap)) { throw "Bootstrap non trovato: $bootstrap" }
 
 $tag = "v$Version"
-$assetName = Split-Path $payload -Leaf
+$payloadName = Split-Path $payload -Leaf
+$bootstrapName = Split-Path $bootstrap -Leaf
 
 & git -C $root pull --rebase origin main
 if ($LASTEXITCODE -ne 0) { throw "git pull --rebase fallito." }
@@ -23,18 +26,19 @@ $exists = ($LASTEXITCODE -eq 0)
 
 if (-not $exists) {
   Write-Host "Release $tag non presente: la creo..."
-  & gh release create $tag $payload --repo $repo --title "FL-Entertainment $tag" --notes "FL-Entertainment custom configuration $tag"
+  & gh release create $tag $payload $bootstrap --repo $repo --title "FL-Entertainment $tag" --notes "FL-Entertainment $tag - payload configurazione + bootstrap installabile"
   if ($LASTEXITCODE -ne 0) { throw "Creazione GitHub Release $tag fallita." }
 } else {
-  Write-Host "Release $tag esistente: aggiorno asset..."
-  & gh release upload $tag $payload --repo $repo --clobber
+  Write-Host "Release $tag esistente: aggiorno payload + bootstrap..."
+  & gh release upload $tag $payload $bootstrap --repo $repo --clobber
   if ($LASTEXITCODE -ne 0) { throw "Upload asset release $tag fallito." }
 }
 
 $manifestObject = [ordered]@{
   version = $Version
-  payload_url = "https://github.com/$repo/releases/download/$tag/$assetName"
-  bootstrap_min_version = "2.0.0"
+  payload_url = "https://github.com/$repo/releases/download/$tag/$payloadName"
+  bootstrap_url = "https://github.com/$repo/releases/download/$tag/$bootstrapName"
+  bootstrap_min_version = $Version
 }
 $manifest = $manifestObject | ConvertTo-Json
 $manifestPath = Join-Path $root "manifest.json"
@@ -52,5 +56,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Pubblicato $tag"
-Write-Host "Asset: https://github.com/$repo/releases/download/$tag/$assetName"
+Write-Host "Payload: https://github.com/$repo/releases/download/$tag/$payloadName"
+Write-Host "Bootstrap: https://github.com/$repo/releases/download/$tag/$bootstrapName"
 Write-Host "Manifest aggiornato: $manifestPath"
