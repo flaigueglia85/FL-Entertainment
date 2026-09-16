@@ -9,6 +9,30 @@ PROFILE = xbmcvfs.translatePath("special://profile/")
 DATA = xbmcvfs.translatePath("special://profile/addon_data/%s/" % ADDON.getAddonInfo("id"))
 DEFAULT_MANIFEST = "https://raw.githubusercontent.com/flaigueglia85/FL-Entertainment/main/manifest.json"
 VERSION_FILE = os.path.join(DATA, "installed_version.txt")
+TARGET_SKIN = "skin.arctic.fuse.3"
+
+PORTABLE_ADDONS = [
+    "plugin.video.s4me",
+    "plugin.video.s4me.bridge",
+    "plugin.video.themoviedb.helper",
+    "repository.jurialmunkey",
+    "resource.font.robotocjksc",
+    "resource.images.studios.coloured",
+    "resource.images.weathericons.white",
+    "script.module.addon.signals",
+    "script.module.certifi",
+    "script.module.chardet",
+    "script.module.idna",
+    "script.module.infotagger",
+    "script.module.jurialmunkey",
+    "script.module.qrcode",
+    "script.module.requests",
+    "script.module.six",
+    "script.module.urllib3",
+    "script.skinvariables",
+    "script.texturemaker",
+    "skin.arctic.fuse.3"
+]
 
 
 def ensure_dir(path):
@@ -23,10 +47,18 @@ def notify(message):
     xbmcgui.Dialog().notification("FL-Entertainment", message, xbmcgui.NOTIFICATION_INFO, 3500)
 
 
+def rpc(method, params=None):
+    req = {"jsonrpc": "2.0", "method": method, "id": 1}
+    if params is not None:
+        req["params"] = params
+    raw = xbmc.executeJSONRPC(json.dumps(req))
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {"error": {"message": raw or "Risposta JSON-RPC non valida"}}
+
+
 def get_manifest_url():
-    # Kodi builds can reject getSettingString() for settings represented by the
-    # generic settings backend. getSetting() is compatible across Kodi 19-21
-    # and always returns the string value we need here.
     try:
         value = ADDON.getSetting("manifest_url")
     except Exception:
@@ -35,7 +67,7 @@ def get_manifest_url():
 
 
 def download(url, dest):
-    req = urllib.request.Request(url, headers={"User-Agent": "Kodi FL-Entertainment Bootstrap/1.0.3"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Kodi FL-Entertainment Bootstrap/1.0.4"})
     with urllib.request.urlopen(req, timeout=45) as r, open(dest, "wb") as f:
         shutil.copyfileobj(r, f)
 
@@ -98,6 +130,58 @@ def apply_payload(payload_zip):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def activate_installed_configuration():
+    # Copiare le cartelle addon non equivale ad abilitarle in Kodi. Registriamo
+    # prima gli addon locali, poi li abilitiamo tramite l'API JSON-RPC nativa.
+    xbmc.executebuiltin("UpdateLocalAddons")
+    xbmc.executebuiltin("UpdateAddonRepos")
+    xbmc.sleep(2500)
+
+    failed = []
+    enabled = 0
+    for addon_id in PORTABLE_ADDONS:
+        if not os.path.isdir(os.path.join(HOME, "addons", addon_id)):
+            continue
+        result = rpc("Addons.SetAddonEnabled", {"addonid": addon_id, "enabled": True})
+        if "error" in result:
+            failed.append(addon_id)
+        else:
+            enabled += 1
+
+    skin_result = rpc("Settings.SetSettingValue", {
+        "setting": "lookandfeel.skin",
+        "value": TARGET_SKIN
+    })
+    skin_ok = "error" not in skin_result
+
+    return enabled, failed, skin_ok
+
+
+def repair_activation():
+    try:
+        progress = xbmcgui.DialogProgress()
+        progress.create("FL-Entertainment", "Attivazione configurazione...")
+        try:
+            progress.update(20, "Registrazione addon locali...")
+            xbmc.executebuiltin("UpdateLocalAddons")
+            xbmc.sleep(1500)
+            progress.update(55, "Abilitazione addon...")
+            enabled, failed, skin_ok = activate_installed_configuration()
+            progress.update(100, "Completato")
+            xbmc.sleep(300)
+        finally:
+            progress.close()
+
+        message = "Addon abilitati: %d\nArctic Fuse 3: %s" % (enabled, "attivata" if skin_ok else "NON attivata")
+        if failed:
+            message += "\n\nNon abilitati: " + ", ".join(failed[:5])
+        message += "\n\nRiavviare Kodi ora?"
+        if xbmcgui.Dialog().yesno("FL-Entertainment", message):
+            xbmc.executebuiltin("RestartApp")
+    except Exception as exc:
+        dialog("FL-Entertainment", "Riparazione fallita:\n%s" % exc)
+
+
 def install_or_update(force=False):
     try:
         manifest = fetch_manifest()
@@ -117,13 +201,12 @@ def install_or_update(force=False):
         tmpdir = tempfile.mkdtemp(prefix="fl-download-")
         payload_zip = os.path.join(tmpdir, "payload.zip")
         try:
-            progress.update(15, "Download payload...")
+            progress.update(10, "Download payload...")
             download(payload_url, payload_zip)
-            progress.update(55, "Installazione configurazione...")
+            progress.update(50, "Installazione configurazione...")
             apply_payload(payload_zip)
-            progress.update(85, "Aggiornamento addon Kodi...")
-            xbmc.executebuiltin("UpdateLocalAddons")
-            xbmc.executebuiltin("UpdateAddonRepos")
+            progress.update(75, "Registrazione e abilitazione addon...")
+            enabled, failed, skin_ok = activate_installed_configuration()
             if remote_version:
                 write_version(remote_version)
             progress.update(100, "Completato")
@@ -132,7 +215,15 @@ def install_or_update(force=False):
             progress.close()
             shutil.rmtree(tmpdir, ignore_errors=True)
 
-        if xbmcgui.Dialog().yesno("FL-Entertainment", "Installazione completata%s.\n\nRiavviare Kodi ora?" % ((" (" + remote_version + ")") if remote_version else "")):
+        msg = "Installazione completata%s.\nAddon abilitati: %d\nArctic Fuse 3: %s" % (
+            (" (" + remote_version + ")") if remote_version else "",
+            enabled,
+            "attivata" if skin_ok else "NON attivata"
+        )
+        if failed:
+            msg += "\nAlcuni addon richiedono verifica dopo il riavvio."
+        msg += "\n\nRiavviare Kodi ora?"
+        if xbmcgui.Dialog().yesno("FL-Entertainment", msg):
             xbmc.executebuiltin("RestartApp")
     except Exception as exc:
         dialog("FL-Entertainment", "Installazione fallita:\n%s" % exc)
@@ -153,12 +244,15 @@ def main():
         install_or_update(True)
     elif action == "update":
         install_or_update(False)
+    elif action == "repair":
+        repair_activation()
     elif action == "settings":
         ADDON.openSettings()
     elif action == "test":
         dialog("FL-Entertainment", "Bootstrap attivo e manifest configurato.")
     else:
         add_item("Installa / reinstalla FL-Entertainment", "install")
+        add_item("Ripara / attiva UI già installata", "repair")
         add_item("Controlla aggiornamenti", "update")
         add_item("Impostazioni", "settings")
         add_item("Test bootstrap", "test")
