@@ -36,6 +36,38 @@ function Copy-SanitizedSettings([string]$source, [string]$destination) {
   $xml.Save($destination)
 }
 
+# Scrive lo ZIP usando path LOGICI, non calcolati dai path fisici Windows.
+# In questo modo le entry sono sempre addons/... o userdata/... e usano sempre '/'.
+function Add-ZipTree {
+  param(
+    [System.IO.Compression.ZipArchive]$Zip,
+    [string]$PhysicalDir,
+    [string]$LogicalPrefix
+  )
+
+  foreach ($item in @(Get-ChildItem -LiteralPath $PhysicalDir -Force)) {
+    $logical = if ([string]::IsNullOrEmpty($LogicalPrefix)) {
+      $item.Name
+    } else {
+      "$LogicalPrefix/$($item.Name)"
+    }
+
+    if ($item.PSIsContainer) {
+      Add-ZipTree -Zip $Zip -PhysicalDir $item.FullName -LogicalPrefix $logical
+    }
+    else {
+      $entry = $Zip.CreateEntry($logical, [System.IO.Compression.CompressionLevel]::Optimal)
+      $entryStream = $entry.Open()
+      $input = [System.IO.File]::OpenRead($item.FullName)
+      try { $input.CopyTo($entryStream) }
+      finally {
+        $input.Dispose()
+        $entryStream.Dispose()
+      }
+    }
+  }
+}
+
 # SOLO componenti custom FL-Entertainment.
 # Gli addon ufficiali NON vengono distribuiti qui: il bootstrap li installa dai repository ufficiali.
 
@@ -101,30 +133,13 @@ if (!$hasSkinGenerated -and !$hasSkinVariablesData) {
   throw "Payload non valido: non trovo configurazione AF3 ne' nei generated XML della skin ne' in script.skinvariables."
 }
 
-# ZIP portabile: calcola il path relativo dalla versione RISOLTA del path staging.
-# Questo evita mismatch tra path TEMP 8.3/corto e FullName lungo restituito da Get-ChildItem.
+# ZIP portabile: NON calcoliamo piu' alcun path relativo dal filesystem Windows.
 if (Test-Path $outZip) { Remove-Item $outZip -Force }
-$stageFull = (Resolve-Path -LiteralPath $stage).Path.TrimEnd([char]92,[char]47)
-$baseUri = New-Object System.Uri(($stageFull + [string][char]92))
-
 $fs = [System.IO.File]::Open($outZip, [System.IO.FileMode]::CreateNew)
 $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create, $false)
 try {
-  $files = Get-ChildItem -LiteralPath $stageFull -Recurse -File
-  foreach ($file in $files) {
-    $fileUri = New-Object System.Uri($file.FullName)
-    $relative = [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($fileUri).ToString())
-    $entryName = $relative.Replace([char]92, [char]47)
-
-    $entry = $zip.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
-    $entryStream = $entry.Open()
-    $input = [System.IO.File]::OpenRead($file.FullName)
-    try { $input.CopyTo($entryStream) }
-    finally {
-      $input.Dispose()
-      $entryStream.Dispose()
-    }
-  }
+  Add-ZipTree -Zip $zip -PhysicalDir (Join-Path $stage "addons") -LogicalPrefix "addons"
+  Add-ZipTree -Zip $zip -PhysicalDir (Join-Path $stage "userdata") -LogicalPrefix "userdata"
 }
 finally {
   $zip.Dispose()
@@ -139,6 +154,12 @@ try {
   if ($withBackslash.Count -gt 0) {
     throw "ZIP non portabile: contiene backslash: $($withBackslash -join ', ')"
   }
+
+  $foreign = @($names | Where-Object { $_ -and -not ($_.StartsWith('addons/') -or $_.StartsWith('userdata/')) })
+  if ($foreign.Count -gt 0) {
+    throw "ZIP non valida: entry fuori root logiche: $($foreign -join ', ')"
+  }
+
   if ($names -notcontains "addons/plugin.video.s4me.bridge/addon.xml") {
     $preview = (($names | Select-Object -First 20) -join ', ')
     throw "ZIP non valida: bridge non presente. Entries: $preview"
@@ -155,4 +176,4 @@ Write-Host "Payload custom-only: $sizeMB MB"
 Write-Host "AF3 generated XML trovati: $generatedCount"
 Write-Host "SkinVariables addon_data: $hasSkinVariablesData"
 Write-Host "Bridge: OK"
-Write-Host "Path ZIP portabili: OK (solo /)"
+Write-Host "Path ZIP portabili: OK (solo addons/ e userdata/)"
