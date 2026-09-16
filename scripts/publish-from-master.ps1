@@ -1,11 +1,12 @@
 param(
-  [string]$Version = "2.0.0"
+  [string]$Version = "2.1.0"
 )
 
 $ErrorActionPreference = "Stop"
 $repo = "flaigueglia85/FL-Entertainment"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$buildScript = Join-Path $PSScriptRoot "build-payload.ps1"
+$buildPayloadScript = Join-Path $PSScriptRoot "build-payload.ps1"
+$buildBootstrapScript = Join-Path $PSScriptRoot "build-bootstrap.ps1"
 $publishScript = Join-Path $PSScriptRoot "publish-release.ps1"
 
 Write-Host "============================================================"
@@ -35,20 +36,26 @@ if (!$authOk) {
 }
 
 Write-Host ""
-Write-Host "[1/3] Build payload custom-only dal Kodi Windows master..."
-& powershell -NoProfile -ExecutionPolicy Bypass -File $buildScript -Version $Version
+Write-Host "[1/4] Build payload custom-only dal Kodi Windows master..."
+& powershell -NoProfile -ExecutionPolicy Bypass -File $buildPayloadScript -Version $Version
 if ($LASTEXITCODE -ne 0) { throw "Build payload fallita." }
 
 Write-Host ""
-Write-Host "[2/3] Pubblicazione GitHub Release + asset..."
+Write-Host "[2/4] Build bootstrap FL-Entertainment..."
+& powershell -NoProfile -ExecutionPolicy Bypass -File $buildBootstrapScript -Version $Version
+if ($LASTEXITCODE -ne 0) { throw "Build bootstrap fallita." }
+
+Write-Host ""
+Write-Host "[3/4] Pubblicazione GitHub Release + payload + bootstrap..."
 & powershell -NoProfile -ExecutionPolicy Bypass -File $publishScript -Version $Version
 if ($LASTEXITCODE -ne 0) { throw "Pubblicazione release fallita." }
 
 Write-Host ""
-Write-Host "[3/3] Verifica release e manifest..."
+Write-Host "[4/4] Verifica release e manifest..."
 $tag = "v$Version"
 gh release view $tag --repo $repo --json tagName,assets,url | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Verifica release fallita." }
 
 Write-Host ""
-Write-Host "Config FL-Entertainment pubblicata. Addon ufficiali verranno installati dal bootstrap/Kodi."
+Write-Host "FL-Entertainment $tag pubblicato."
+Write-Host "La release contiene sia payload sia bootstrap installabile."
