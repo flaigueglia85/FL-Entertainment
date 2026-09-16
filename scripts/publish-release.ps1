@@ -20,6 +20,11 @@ if (!(Test-Path $payload)) {
 $tag = "v$Version"
 $assetName = Split-Path $payload -Leaf
 
+# Allinea la working copy PRIMA di modificare manifest.json.
+# In questo modo git pull --rebase non viene bloccato da modifiche locali create dallo script stesso.
+& git -C $root pull --rebase origin main
+if ($LASTEXITCODE -ne 0) { throw "git pull --rebase fallito." }
+
 # PowerShell 5.1 converte stderr dei programmi nativi in NativeCommandError quando
 # ErrorActionPreference=Stop. Usiamo cmd.exe solo per il probe silenzioso della release.
 $probe = "gh release view $tag --repo $repo >nul 2>nul"
@@ -44,10 +49,6 @@ $manifestObject = [ordered]@{
 $manifest = $manifestObject | ConvertTo-Json
 $manifestPath = Join-Path $root "manifest.json"
 [IO.File]::WriteAllText($manifestPath, $manifest + [Environment]::NewLine, (New-Object Text.UTF8Encoding($false)))
-
-# Keep local main current before committing the manifest.
-& git -C $root pull --rebase origin main
-if ($LASTEXITCODE -ne 0) { throw "git pull --rebase fallito." }
 
 & git -C $root add manifest.json
 & git -C $root diff --cached --quiet
