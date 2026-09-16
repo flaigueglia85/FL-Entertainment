@@ -24,11 +24,18 @@ def notify(message):
 
 
 def get_manifest_url():
-    return ADDON.getSettingString("manifest_url").strip() or DEFAULT_MANIFEST
+    # Kodi builds can reject getSettingString() for settings represented by the
+    # generic settings backend. getSetting() is compatible across Kodi 19-21
+    # and always returns the string value we need here.
+    try:
+        value = ADDON.getSetting("manifest_url")
+    except Exception:
+        value = ""
+    return (value or "").strip() or DEFAULT_MANIFEST
 
 
 def download(url, dest):
-    req = urllib.request.Request(url, headers={"User-Agent": "Kodi FL-Entertainment Bootstrap/1.0.2"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Kodi FL-Entertainment Bootstrap/1.0.3"})
     with urllib.request.urlopen(req, timeout=45) as r, open(dest, "wb") as f:
         shutil.copyfileobj(r, f)
 
