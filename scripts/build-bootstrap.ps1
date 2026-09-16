@@ -30,7 +30,8 @@ if (Test-Path $outZip) { Remove-Item $outZip -Force }
 # Verifica struttura ZIP prima di consegnarla a Kodi.
 $zip = [System.IO.Compression.ZipFile]::OpenRead($outZip)
 try {
-  $names = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\\','/') })
+  # ZipArchive su Windows può restituire nomi con backslash: normalizziamo a slash.
+  $names = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\','/') })
   $required = "$addonId/addon.xml"
   if ($names -notcontains $required) {
     $preview = (($names | Select-Object -First 10) -join ', ')
