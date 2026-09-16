@@ -37,8 +37,9 @@ if (-not $exists) {
 $manifestObject = [ordered]@{
   version = $Version
   payload_url = "https://github.com/$repo/releases/download/$tag/$payloadName"
+  bootstrap_version = $Version
   bootstrap_url = "https://github.com/$repo/releases/download/$tag/$bootstrapName"
-  bootstrap_min_version = $Version
+  bootstrap_min_version = "2.1.3"
 }
 $manifest = $manifestObject | ConvertTo-Json
 $manifestPath = Join-Path $root "manifest.json"
