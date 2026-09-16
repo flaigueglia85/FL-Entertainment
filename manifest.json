@@ -1,5 +1,5 @@
 {
-    "version":  "2.0.0",
-    "payload_url":  "https://github.com/flaigueglia85/FL-Entertainment/releases/download/v2.0.0/FL-Entertainment-payload-2.0.0.zip",
+    "version":  "2.0.1",
+    "payload_url":  "https://github.com/flaigueglia85/FL-Entertainment/releases/download/v2.0.1/FL-Entertainment-payload-2.0.1.zip",
     "bootstrap_min_version":  "2.0.0"
 }
