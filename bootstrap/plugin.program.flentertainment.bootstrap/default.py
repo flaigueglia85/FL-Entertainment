@@ -10,29 +10,12 @@ DATA = xbmcvfs.translatePath("special://profile/addon_data/%s/" % ADDON.getAddon
 DEFAULT_MANIFEST = "https://raw.githubusercontent.com/flaigueglia85/FL-Entertainment/main/manifest.json"
 VERSION_FILE = os.path.join(DATA, "installed_version.txt")
 TARGET_SKIN = "skin.arctic.fuse.3"
-
-PORTABLE_ADDONS = [
-    "plugin.video.s4me",
-    "plugin.video.s4me.bridge",
-    "plugin.video.themoviedb.helper",
-    "repository.jurialmunkey",
-    "resource.font.robotocjksc",
-    "resource.images.studios.coloured",
-    "resource.images.weathericons.white",
-    "script.module.addon.signals",
-    "script.module.certifi",
-    "script.module.chardet",
-    "script.module.idna",
-    "script.module.infotagger",
-    "script.module.jurialmunkey",
-    "script.module.qrcode",
-    "script.module.requests",
-    "script.module.six",
-    "script.module.urllib3",
-    "script.skinvariables",
-    "script.texturemaker",
-    "skin.arctic.fuse.3"
-]
+JURIAL_REPO_ID = "repository.jurialmunkey"
+JURIAL_REPO_ZIP = "https://jurialmunkey.github.io/repository.jurialmunkey/repository.jurialmunkey-3.4.zip"
+S4ME_ID = "plugin.video.s4me"
+S4ME_STABLE_ZIP = "https://github.com/Stream4me/addon/archive/refs/heads/stable.zip"
+BRIDGE_ID = "plugin.video.s4me.bridge"
+MIN_PAYLOAD_MAJOR = 2
 
 
 def ensure_dir(path):
@@ -58,6 +41,19 @@ def rpc(method, params=None):
         return {"error": {"message": raw or "Risposta JSON-RPC non valida"}}
 
 
+def addon_path(addon_id):
+    return os.path.join(HOME, "addons", addon_id)
+
+
+def addon_present(addon_id):
+    return os.path.isfile(os.path.join(addon_path(addon_id), "addon.xml"))
+
+
+def enable_addon(addon_id):
+    result = rpc("Addons.SetAddonEnabled", {"addonid": addon_id, "enabled": True})
+    return "error" not in result
+
+
 def get_manifest_url():
     try:
         value = ADDON.getSetting("manifest_url")
@@ -66,9 +62,9 @@ def get_manifest_url():
     return (value or "").strip() or DEFAULT_MANIFEST
 
 
-def download(url, dest):
-    req = urllib.request.Request(url, headers={"User-Agent": "Kodi FL-Entertainment Bootstrap/1.0.4"})
-    with urllib.request.urlopen(req, timeout=45) as r, open(dest, "wb") as f:
+def download(url, dest, timeout=90):
+    req = urllib.request.Request(url, headers={"User-Agent": "Kodi FL-Entertainment Bootstrap/2.0.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r, open(dest, "wb") as f:
         shutil.copyfileobj(r, f)
 
 
@@ -84,6 +80,13 @@ def write_version(version):
     ensure_dir(DATA)
     with open(VERSION_FILE, "w", encoding="utf-8") as f:
         f.write(version or "")
+
+
+def version_major(value):
+    try:
+        return int(str(value).split(".")[0])
+    except Exception:
+        return 0
 
 
 def fetch_manifest():
@@ -120,8 +123,118 @@ def copy_tree_contents(src_root, dst_root):
             shutil.copy2(src, dst)
 
 
-def apply_payload(payload_zip):
-    tmp = tempfile.mkdtemp(prefix="fl-payload-")
+def install_zip_folder(url, target_addon_id):
+    tmp = tempfile.mkdtemp(prefix="fl-addon-")
+    try:
+        zpath = os.path.join(tmp, "addon.zip")
+        extracted = os.path.join(tmp, "extracted")
+        download(url, zpath)
+        safe_extract(zpath, extracted)
+
+        candidates = []
+        for root, dirs, files in os.walk(extracted):
+            if "addon.xml" in files:
+                candidates.append(root)
+        if not candidates:
+            raise RuntimeError("ZIP senza addon.xml: %s" % url)
+
+        # Prefer exact folder/addon id if present; otherwise first addon root.
+        source = None
+        for candidate in candidates:
+            if os.path.basename(candidate) == target_addon_id:
+                source = candidate
+                break
+        if source is None:
+            source = candidates[0]
+
+        target = addon_path(target_addon_id)
+        if os.path.isdir(target):
+            shutil.rmtree(target, ignore_errors=True)
+        shutil.copytree(source, target)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    xbmc.executebuiltin("UpdateLocalAddons")
+    xbmc.sleep(1200)
+    enable_addon(target_addon_id)
+
+
+def ensure_jurial_repo():
+    if not addon_present(JURIAL_REPO_ID):
+        install_zip_folder(JURIAL_REPO_ZIP, JURIAL_REPO_ID)
+    enable_addon(JURIAL_REPO_ID)
+    xbmc.executebuiltin("UpdateAddonRepos")
+    xbmc.sleep(3000)
+
+
+def ensure_kodi_addon(addon_id, timeout=180):
+    if addon_present(addon_id):
+        enable_addon(addon_id)
+        return True
+
+    xbmc.executebuiltin("InstallAddon(%s)" % addon_id)
+    elapsed = 0
+    while elapsed < timeout:
+        if addon_present(addon_id):
+            xbmc.sleep(1000)
+            enable_addon(addon_id)
+            return True
+        xbmc.sleep(1000)
+        elapsed += 1
+    return False
+
+
+def ensure_arctic_stack():
+    ensure_jurial_repo()
+    if not ensure_kodi_addon(TARGET_SKIN):
+        raise RuntimeError("Kodi non ha completato l'installazione di Arctic Fuse 3")
+
+    # Sono dipendenze dichiarate dalla skin. Normalmente Kodi le installa da solo;
+    # questi check servono solo a non proseguire se una dipendenza non e' ancora pronta.
+    required = [
+        "script.skinvariables",
+        "script.texturemaker",
+        "plugin.video.themoviedb.helper",
+        "resource.images.weathericons.white",
+        "resource.images.studios.coloured",
+        "resource.font.robotocjksc"
+    ]
+    missing = []
+    for addon_id in required:
+        if not ensure_kodi_addon(addon_id, timeout=90):
+            missing.append(addon_id)
+    if missing:
+        raise RuntimeError("Dipendenze Arctic mancanti: " + ", ".join(missing))
+
+
+def ensure_stream4me(reset_defaults=False):
+    # L'installer ufficiale S4Me scarica a sua volta il branch stable da GitHub.
+    # Qui facciamo direttamente lo stesso passaggio, senza schermate iniziali.
+    valid = addon_present(S4ME_ID) and os.path.isfile(os.path.join(addon_path(S4ME_ID), "service.py"))
+    if not valid:
+        install_zip_folder(S4ME_STABLE_ZIP, S4ME_ID)
+
+    xbmc.executebuiltin("UpdateLocalAddons")
+    xbmc.sleep(1200)
+    enable_addon(S4ME_ID)
+
+    # Prima installazione / migrazione dal vecchio bootstrap: tutte le preferenze
+    # restano ai default S4Me; imponiamo solo i canali italiani.
+    if reset_defaults:
+        settings_file = os.path.join(PROFILE, "addon_data", S4ME_ID, "settings.xml")
+        try:
+            if os.path.isfile(settings_file):
+                os.remove(settings_file)
+        except Exception:
+            pass
+        xbmc.sleep(250)
+
+    s4me = xbmcaddon.Addon(S4ME_ID)
+    s4me.setSetting("channel_language", "ita")
+
+
+def apply_custom_payload(payload_zip):
+    tmp = tempfile.mkdtemp(prefix="fl-config-")
     try:
         safe_extract(payload_zip, tmp)
         copy_tree_contents(os.path.join(tmp, "addons"), os.path.join(HOME, "addons"))
@@ -129,104 +242,81 @@ def apply_payload(payload_zip):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-
-def activate_installed_configuration():
-    # Copiare le cartelle addon non equivale ad abilitarle in Kodi. Registriamo
-    # prima gli addon locali, poi li abilitiamo tramite l'API JSON-RPC nativa.
     xbmc.executebuiltin("UpdateLocalAddons")
-    xbmc.executebuiltin("UpdateAddonRepos")
-    xbmc.sleep(2500)
-
-    failed = []
-    enabled = 0
-    for addon_id in PORTABLE_ADDONS:
-        if not os.path.isdir(os.path.join(HOME, "addons", addon_id)):
-            continue
-        result = rpc("Addons.SetAddonEnabled", {"addonid": addon_id, "enabled": True})
-        if "error" in result:
-            failed.append(addon_id)
-        else:
-            enabled += 1
-
-    skin_result = rpc("Settings.SetSettingValue", {
-        "setting": "lookandfeel.skin",
-        "value": TARGET_SKIN
-    })
-    skin_ok = "error" not in skin_result
-
-    return enabled, failed, skin_ok
+    xbmc.sleep(1200)
+    if addon_present(BRIDGE_ID):
+        enable_addon(BRIDGE_ID)
 
 
-def repair_activation():
-    try:
-        progress = xbmcgui.DialogProgress()
-        progress.create("FL-Entertainment", "Attivazione configurazione...")
-        try:
-            progress.update(20, "Registrazione addon locali...")
-            xbmc.executebuiltin("UpdateLocalAddons")
-            xbmc.sleep(1500)
-            progress.update(55, "Abilitazione addon...")
-            enabled, failed, skin_ok = activate_installed_configuration()
-            progress.update(100, "Completato")
-            xbmc.sleep(300)
-        finally:
-            progress.close()
-
-        message = "Addon abilitati: %d\nArctic Fuse 3: %s" % (enabled, "attivata" if skin_ok else "NON attivata")
-        if failed:
-            message += "\n\nNon abilitati: " + ", ".join(failed[:5])
-        message += "\n\nRiavviare Kodi ora?"
-        if xbmcgui.Dialog().yesno("FL-Entertainment", message):
-            xbmc.executebuiltin("RestartApp")
-    except Exception as exc:
-        dialog("FL-Entertainment", "Riparazione fallita:\n%s" % exc)
+def activate_skin():
+    if not addon_present(TARGET_SKIN):
+        return False
+    result = rpc("Settings.SetSettingValue", {"setting": "lookandfeel.skin", "value": TARGET_SKIN})
+    return "error" not in result
 
 
 def install_or_update(force=False):
+    progress = None
+    tmpdir = None
     try:
         manifest = fetch_manifest()
         remote_version = str(manifest.get("version", "")).strip()
+        if version_major(remote_version) < MIN_PAYLOAD_MAJOR:
+            raise RuntimeError("Manifest ancora legacy (%s). Pubblica prima FL-Entertainment 2.x." % (remote_version or "senza versione"))
+
         installed = current_version()
         if remote_version and installed == remote_version and not force:
-            notify("Configurazione già aggiornata: %s" % remote_version)
+            notify("FL-Entertainment gia' aggiornato: %s" % remote_version)
             return
 
         payload = manifest.get("payload_url") or manifest.get("payload")
         if not payload:
-            raise ValueError("payload_url mancante nel manifest")
+            raise RuntimeError("payload_url mancante nel manifest")
         payload_url = urllib.parse.urljoin(get_manifest_url(), payload)
 
         progress = xbmcgui.DialogProgress()
-        progress.create("FL-Entertainment", "Download configurazione...")
+        progress.create("FL-Entertainment", "Preparazione installazione pulita...")
+
+        progress.update(8, "Repository JurialMunkey...")
+        ensure_jurial_repo()
+
+        progress.update(20, "Installazione Arctic Fuse 3 e dipendenze...")
+        ensure_arctic_stack()
+
+        progress.update(58, "Stream4Me stable...")
+        # Reset solo su prima installazione o migrazione dalla vecchia architettura 1.x.
+        ensure_stream4me(reset_defaults=(version_major(installed) < 2))
+
+        progress.update(72, "Download configurazione FL-Entertainment...")
         tmpdir = tempfile.mkdtemp(prefix="fl-download-")
         payload_zip = os.path.join(tmpdir, "payload.zip")
-        try:
-            progress.update(10, "Download payload...")
-            download(payload_url, payload_zip)
-            progress.update(50, "Installazione configurazione...")
-            apply_payload(payload_zip)
-            progress.update(75, "Registrazione e abilitazione addon...")
-            enabled, failed, skin_ok = activate_installed_configuration()
-            if remote_version:
-                write_version(remote_version)
-            progress.update(100, "Completato")
-            xbmc.sleep(400)
-        finally:
-            progress.close()
-            shutil.rmtree(tmpdir, ignore_errors=True)
+        download(payload_url, payload_zip)
 
-        msg = "Installazione completata%s.\nAddon abilitati: %d\nArctic Fuse 3: %s" % (
-            (" (" + remote_version + ")") if remote_version else "",
-            enabled,
-            "attivata" if skin_ok else "NON attivata"
-        )
-        if failed:
-            msg += "\nAlcuni addon richiedono verifica dopo il riavvio."
-        msg += "\n\nRiavviare Kodi ora?"
-        if xbmcgui.Dialog().yesno("FL-Entertainment", msg):
+        progress.update(82, "Applicazione widget, skin settings e bridge...")
+        apply_custom_payload(payload_zip)
+
+        progress.update(94, "Attivazione Arctic Fuse 3...")
+        if not activate_skin():
+            raise RuntimeError("Arctic Fuse 3 installata ma Kodi non l'ha attivata")
+
+        if remote_version:
+            write_version(remote_version)
+        progress.update(100, "Completato")
+        xbmc.sleep(500)
+
+        if xbmcgui.Dialog().yesno(
+            "FL-Entertainment",
+            "Installazione completata (%s).\n\nArctic Fuse 3 + dipendenze: OK\nStream4Me stable: OK\nLingua canali S4Me: ITA\nConfig FL + bridge: OK\n\nRiavviare Kodi ora?" % remote_version
+        ):
             xbmc.executebuiltin("RestartApp")
     except Exception as exc:
         dialog("FL-Entertainment", "Installazione fallita:\n%s" % exc)
+    finally:
+        if progress:
+            try: progress.close()
+            except Exception: pass
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def add_item(label, action):
@@ -244,19 +334,16 @@ def main():
         install_or_update(True)
     elif action == "update":
         install_or_update(False)
-    elif action == "repair":
-        repair_activation()
     elif action == "settings":
         ADDON.openSettings()
     elif action == "test":
-        dialog("FL-Entertainment", "Bootstrap attivo e manifest configurato.")
+        dialog("FL-Entertainment", "Bootstrap 2.0 attivo.\nManifest: %s" % get_manifest_url())
     else:
         add_item("Installa / reinstalla FL-Entertainment", "install")
-        add_item("Ripara / attiva UI già installata", "repair")
         add_item("Controlla aggiornamenti", "update")
         add_item("Impostazioni", "settings")
         add_item("Test bootstrap", "test")
-        xbmcplugin.addDirectoryItem(HANDLE, "", xbmcgui.ListItem(label="Versione installata: %s" % (current_version() or "nessuna")), isFolder=False)
+        xbmcplugin.addDirectoryItem(HANDLE, "", xbmcgui.ListItem(label="Versione FL installata: %s" % (current_version() or "nessuna")), isFolder=False)
 
     xbmcplugin.endOfDirectory(HANDLE)
 
