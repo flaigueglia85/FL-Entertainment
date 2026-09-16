@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "2.0.0"
+  [string]$Version = "2.0.2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,9 +18,7 @@ if (!(Test-Path (Join-Path $src "addon.xml"))) { throw "addon.xml mancante nel b
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 if (Test-Path $outZip) { Remove-Item $outZip -Force }
 
-# IMPORTANT: non usare CreateFromDirectory su Windows.
-# Può scrivere nomi entry con backslash (\), che Kodi su Android può considerare struttura non valida.
-# Creiamo ogni entry a mano usando SEMPRE slash (/).
+# Kodi/Android richiede entry ZIP portabili con slash (/), non path Windows con backslash.
 $fs = [System.IO.File]::Open($outZip, [System.IO.FileMode]::CreateNew)
 $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create, $false)
 try {
@@ -45,7 +43,6 @@ finally {
   $fs.Dispose()
 }
 
-# Verifica reale: nessuna entry deve contenere backslash e addon.xml deve stare nel path Kodi atteso.
 $verify = [System.IO.Compression.ZipFile]::OpenRead($outZip)
 try {
   $names = @($verify.Entries | ForEach-Object { $_.FullName })
