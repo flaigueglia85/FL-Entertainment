@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "2.0.2"
+  [string]$Version = "2.1.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,24 +18,24 @@ if (!(Test-Path (Join-Path $src "addon.xml"))) { throw "addon.xml mancante nel b
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 if (Test-Path $outZip) { Remove-Item $outZip -Force }
 
-# Kodi/Android richiede entry ZIP portabili con slash (/), non path Windows con backslash.
+# Costruzione ZIP Kodi con root logica fissa: niente path relativi Windows/8.3.
 $fs = [System.IO.File]::Open($outZip, [System.IO.FileMode]::CreateNew)
 $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create, $false)
 try {
-  $files = Get-ChildItem -LiteralPath $src -Recurse -File
-  foreach ($file in $files) {
-    $relative = $file.FullName.Substring($src.Length).TrimStart('\','/')
-    $entryName = ($addonId + '/' + ($relative -replace '\\','/'))
+  foreach ($file in Get-ChildItem -LiteralPath $src -Recurse -File) {
+    $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd([char]92,[char]47)
+    $fileFull = [System.IO.Path]::GetFullPath($file.FullName)
+    if (!$fileFull.StartsWith($srcFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+      throw "File fuori source bootstrap: $fileFull"
+    }
+    $relative = $fileFull.Substring($srcFull.Length).TrimStart([char]92,[char]47)
+    $relative = $relative.Replace([char]92, [char]47)
+    $entryName = "$addonId/$relative"
     $entry = $zip.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
     $entryStream = $entry.Open()
-    $input = [System.IO.File]::OpenRead($file.FullName)
-    try {
-      $input.CopyTo($entryStream)
-    }
-    finally {
-      $input.Dispose()
-      $entryStream.Dispose()
-    }
+    $input = [System.IO.File]::OpenRead($fileFull)
+    try { $input.CopyTo($entryStream) }
+    finally { $input.Dispose(); $entryStream.Dispose() }
   }
 }
 finally {
@@ -47,26 +47,16 @@ $verify = [System.IO.Compression.ZipFile]::OpenRead($outZip)
 try {
   $names = @($verify.Entries | ForEach-Object { $_.FullName })
   $required = "$addonId/addon.xml"
-
   if ($names -notcontains $required) {
-    $preview = (($names | Select-Object -First 10) -join ', ')
-    throw "ZIP non valida: manca $required. Prime entries: $preview"
+    throw "ZIP non valida: manca $required. Entries: $(($names | Select-Object -First 15) -join ', ')"
   }
-
-  $withBackslash = @($names | Where-Object { $_ -match '\\' })
-  if ($withBackslash.Count -gt 0) {
-    throw "ZIP non portabile: contiene path con backslash: $($withBackslash -join ', ')"
-  }
-
-  $foreignTop = @($names | Where-Object { $_ -and -not $_.StartsWith("$addonId/") })
-  if ($foreignTop.Count -gt 0) {
-    throw "ZIP non valida: file fuori dalla cartella addon: $($foreignTop -join ', ')"
+  $bad = @($names | Where-Object { $_.Contains([string][char]92) -or $_.Contains('../') -or -not $_.StartsWith("$addonId/") })
+  if ($bad.Count -gt 0) {
+    throw "ZIP bootstrap non portabile: $($bad -join ', ')"
   }
 }
-finally {
-  $verify.Dispose()
-}
+finally { $verify.Dispose() }
 
 Write-Host "Creato: $outZip"
 Write-Host "Struttura Kodi OK: $addonId/addon.xml"
-Write-Host "Path ZIP portabili OK: usa solo /"
+Write-Host "Path ZIP portabili OK"
