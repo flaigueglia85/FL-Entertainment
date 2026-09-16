@@ -7,33 +7,23 @@ $repo = "flaigueglia85/FL-Entertainment"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $payload = Join-Path $root "dist\FL-Entertainment-payload-$Version.zip"
 
-if (!(Get-Command gh -ErrorAction SilentlyContinue)) {
-  throw "GitHub CLI (gh) non trovato."
-}
-if (!(Get-Command git -ErrorAction SilentlyContinue)) {
-  throw "git non trovato."
-}
-if (!(Test-Path $payload)) {
-  throw "Payload non trovato: $payload. Esegui prima build-payload.ps1 -Version $Version"
-}
+if (!(Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh) non trovato." }
+if (!(Get-Command git -ErrorAction SilentlyContinue)) { throw "git non trovato." }
+if (!(Test-Path $payload)) { throw "Payload non trovato: $payload" }
 
 $tag = "v$Version"
 $assetName = Split-Path $payload -Leaf
 
-# Allinea la working copy PRIMA di modificare manifest.json.
-# In questo modo git pull --rebase non viene bloccato da modifiche locali create dallo script stesso.
 & git -C $root pull --rebase origin main
 if ($LASTEXITCODE -ne 0) { throw "git pull --rebase fallito." }
 
-# PowerShell 5.1 converte stderr dei programmi nativi in NativeCommandError quando
-# ErrorActionPreference=Stop. Usiamo cmd.exe solo per il probe silenzioso della release.
 $probe = "gh release view $tag --repo $repo >nul 2>nul"
 & cmd.exe /d /c $probe
 $exists = ($LASTEXITCODE -eq 0)
 
 if (-not $exists) {
   Write-Host "Release $tag non presente: la creo..."
-  & gh release create $tag $payload --repo $repo --title "FL-Entertainment $tag" --notes "Payload FL-Entertainment $tag"
+  & gh release create $tag $payload --repo $repo --title "FL-Entertainment $tag" --notes "FL-Entertainment custom configuration $tag"
   if ($LASTEXITCODE -ne 0) { throw "Creazione GitHub Release $tag fallita." }
 } else {
   Write-Host "Release $tag esistente: aggiorno asset..."
@@ -44,7 +34,7 @@ if (-not $exists) {
 $manifestObject = [ordered]@{
   version = $Version
   payload_url = "https://github.com/$repo/releases/download/$tag/$assetName"
-  bootstrap_min_version = "1.0.2"
+  bootstrap_min_version = "2.0.0"
 }
 $manifest = $manifestObject | ConvertTo-Json
 $manifestPath = Join-Path $root "manifest.json"
