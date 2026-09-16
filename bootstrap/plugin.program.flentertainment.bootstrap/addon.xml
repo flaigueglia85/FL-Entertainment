@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.program.flentertainment.bootstrap" name="FL-Entertainment Bootstrap" version="2.0.2" provider-name="FL-Entertainment">
+<addon id="plugin.program.flentertainment.bootstrap" name="FL-Entertainment Bootstrap" version="2.1.0" provider-name="FL-Entertainment">
   <requires><import addon="xbmc.python" version="3.0.0"/></requires>
   <extension point="xbmc.python.pluginsource" library="default.py"><provides>executable</provides></extension>
   <extension point="xbmc.addon.metadata">
-    <summary lang="en_GB">Bootstrap and updater for FL-Entertainment Kodi configuration</summary>
-    <description lang="en_GB">Installs official Kodi/Jurial add-ons with Python networking, then applies only FL-Entertainment custom configuration.</description>
+    <summary lang="en_GB">Installer and UI configurator for FL-Entertainment</summary>
+    <description lang="en_GB">Step 1 installs and repairs components. Step 2 applies and verifies the FL-Entertainment Arctic Fuse 3 UI preset.</description>
     <platform>all</platform>
     <license>MIT</license>
   </extension>
