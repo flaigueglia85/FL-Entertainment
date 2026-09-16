@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "2.1.0"
+  [string]$Version = "2.1.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,7 +18,6 @@ if (!(Test-Path (Join-Path $src "addon.xml"))) { throw "addon.xml mancante nel b
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 if (Test-Path $outZip) { Remove-Item $outZip -Force }
 
-# Costruzione ZIP Kodi con root logica fissa: niente path relativi Windows/8.3.
 $fs = [System.IO.File]::Open($outZip, [System.IO.FileMode]::CreateNew)
 $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create, $false)
 try {
