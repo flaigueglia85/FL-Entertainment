@@ -101,16 +101,21 @@ if (!$hasSkinGenerated -and !$hasSkinVariablesData) {
   throw "Payload non valido: non trovo configurazione AF3 ne' nei generated XML della skin ne' in script.skinvariables."
 }
 
-# ZIP portabile: entry create manualmente e convertite da path Windows a slash POSIX.
+# ZIP portabile: calcola il path relativo dalla versione RISOLTA del path staging.
+# Questo evita mismatch tra path TEMP 8.3/corto e FullName lungo restituito da Get-ChildItem.
 if (Test-Path $outZip) { Remove-Item $outZip -Force }
+$stageFull = (Resolve-Path -LiteralPath $stage).Path.TrimEnd([char]92,[char]47)
+$baseUri = New-Object System.Uri(($stageFull + [string][char]92))
+
 $fs = [System.IO.File]::Open($outZip, [System.IO.FileMode]::CreateNew)
 $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create, $false)
 try {
-  $files = Get-ChildItem -LiteralPath $stage -Recurse -File
+  $files = Get-ChildItem -LiteralPath $stageFull -Recurse -File
   foreach ($file in $files) {
-    $relative = $file.FullName.Substring($stage.Length).TrimStart([char]92,[char]47)
-    # IMPORTANT: Replace char 92 (\) con char 47 (/). Niente regex ambiguo.
+    $fileUri = New-Object System.Uri($file.FullName)
+    $relative = [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($fileUri).ToString())
     $entryName = $relative.Replace([char]92, [char]47)
+
     $entry = $zip.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
     $entryStream = $entry.Open()
     $input = [System.IO.File]::OpenRead($file.FullName)
